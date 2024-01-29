@@ -1,0 +1,13 @@
+__pycache__/
+.idea/
+
+*.so
+
+bin/
+build/
+develop-eggs/
+dist/
+eggs/
+
+**/__pycache__
+**/.idea
