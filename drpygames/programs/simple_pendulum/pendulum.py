@@ -19,9 +19,10 @@ class RenderingMode(Enum):
 
 
 def setup_pendulum_lqr_lti(
-        n_steps: int = 10000,
-        ang_s0: float = math.pi / 2, ang_v0: float = 0., dt: float = 0.4,
-        damping: float = 0.01, rho: float = 0.3, gravity: float = 0.01,
+        n_steps: int = 1000, dt: float = 0.4,
+        ang_s0: float = math.pi / 2, ang_v0: float = 0.,
+        damping: float = 0.01, gravity: float = 0.01,
+        rho: float = 0.3,
 ) -> LqrDesignLti:
     """Pendulum Linear dynamics without gravity"""
     x_0: ndarray[float] = np.array([[ang_s0, ang_v0]], dtype=float).T  # [angle, d(angle)/dt]
