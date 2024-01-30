@@ -53,11 +53,11 @@ def rewind_solution(A: ndarray, B: ndarray, Q: ndarray, R: ndarray, S_tpp: ndarr
 class LqrDesign:
     task: str
 
-    x_0: ndarray
+    x_0: ndarray[float]
 
-    Q: ndarray
-    R: ndarray
-    S_T: ndarray
+    Q: ndarray[float]
+    R: ndarray[float]
+    S_T: ndarray[float]
     n_steps: int
 
     hyperparameters: Optional[Dict[str, Any]]
@@ -68,23 +68,23 @@ class LqrDesign:
 
 @dataclass
 class LqrDesignLti(LqrDesign):
-    A: ndarray
-    B: ndarray
+    A: ndarray[float]
+    B: ndarray[float]
 
 @dataclass
 class LqrDesignLtv(LqrDesign):
-    A_list: List[ndarray]
-    B_list: List[ndarray]
+    A_list: List[ndarray[float]]
+    B_list: List[ndarray[float]]
 
 
 @dataclass
 class LqrTrajectory:
-    x_t_list: List[ndarray]
-    u_t_list: List[ndarray]
+    x_t_list: List[ndarray[float]]
+    u_t_list: List[ndarray[float]]
 
     def copy_til_i(self, ind_i: int):
-        x_t_list: List[ndarray] = [x_t for x_t in self.x_t_list[:ind_i+1]]
-        u_t_list: List[ndarray] = [u_t for u_t in self.u_t_list[:ind_i+1]]
+        x_t_list: List[ndarray[float]] = [x_t for x_t in self.x_t_list[:ind_i+1]]
+        u_t_list: List[ndarray[float]] = [u_t for u_t in self.u_t_list[:ind_i+1]]
         return LqrTrajectory(x_t_list, u_t_list)
 
     def check_dimentionality(self):
@@ -137,43 +137,6 @@ def solve_lqr_lti(lqrdesign: LqrDesignLti) -> LqrTrajectory:
 
         if t < n_steps:
             x_tpp: ndarray = transition(A, x_t_list[t], B, u_t)
-            x_t_list.append(x_tpp)
-
-    plan_result: LqrTrajectory = LqrTrajectory(x_t_list=x_t_list, u_t_list=u_t_list)
-    return plan_result
-
-
-def solve_lqr_ltv(lqrdesign: LqrDesignLtv) -> LqrTrajectory:
-    """Indeed, most of dynamics we deal with are with time-variant linear maps"""
-    x_0: ndarray = lqrdesign.x_0
-    A_list: List[ndarray] = lqrdesign.A_list
-    B_list: List[ndarray] = lqrdesign.B_list
-
-    Q: ndarray = lqrdesign.Q
-    R: ndarray = lqrdesign.R
-    S_T: ndarray = lqrdesign.S_T
-    n_steps: int = lqrdesign.n_steps
-
-    # Run
-    S_tpp_list: List[ndarray] = [S_T]
-    for t in range(n_steps, 0, -1):
-        S_t: ndarray = rewind_solution(A_list[t], B_list[t], Q, R, S_tpp_list[-1])
-        S_tpp_list.append(S_t)
-    S_tpp_list = S_tpp_list[::-1]
-
-    K_t_list: List[ndarray] = []
-    for t in range(0, n_steps, 1):
-        K_t: ndarray = kalmangain(A_list[t], B_list[t], R, S_tpp_list[t + 1])
-        K_t_list.append(K_t)
-
-    x_t_list: List[ndarray] = [x_0]
-    u_t_list: List[ndarray] = []
-    for t in range(0, n_steps, 1):
-        u_t: ndarray = K_t_list[t] @ x_t_list[t]
-        u_t_list.append(u_t)
-
-        if t < n_steps:
-            x_tpp: ndarray = transition(A_list[t], x_t_list[t], B_list[t], u_t)
             x_t_list.append(x_tpp)
 
     plan_result: LqrTrajectory = LqrTrajectory(x_t_list=x_t_list, u_t_list=u_t_list)

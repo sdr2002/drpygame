@@ -11,7 +11,7 @@ from drpygames.programs.utils.rgb import WHITE
 
 
 def setup_pendulum_lqr_lti(
-        n_steps: int = 10000, iterative: bool = False,
+        n_steps: int = 10000, reeval: bool = False,
         ang_s0: float = math.pi / 2, ang_v0: float = 0., dt: float = 0.4,
         damping: float = 0.01, rho: float = 0.3, gravity: float = 0.01,
 ) -> LqrDesignLti:
@@ -30,10 +30,10 @@ def setup_pendulum_lqr_lti(
 
     Q: ndarray = 1 * np.eye(2, 2, dtype=float)
     R: ndarray = rho * np.eye(2, 2, dtype=float)
-    S_T: ndarray = 1 * np.eye(2, 2, dtype=float)
+    S_T: ndarray = np.max([rho, 1.]) * np.diag([10., 1.])
 
     return LqrDesignLti(
-        task='Pendulum' if not iterative else 'Pendulum_iLQR',
+        task='Pendulum' if not reeval else 'Pendulum_reLQR',
         x_0=x_0, A=A, B=B, Q=Q, R=R, S_T=S_T, n_steps=n_steps,
         hyperparameters=dict(dt=dt, damping=damping, gravity=gravity, rho=rho)
     )
@@ -45,7 +45,7 @@ class Pendulum:
             ang_s0=math.pi / 2., ang_v0=0.,
             gravity: float = 0.01, damping: float = 0.01, tau: float = 0.4,
             n_steps: int = int(1e4), rho: float = 10.,
-            planned: bool = False, iterative: bool = False,
+            planned: bool = False, reeval: bool = False,
             ball_color='red'
     ):
         # Graphical Objects Spec
@@ -57,7 +57,7 @@ class Pendulum:
         # Setup dynamics T1 - naive
         self.planned: bool = False  # if you use traj planner like lqr, turn this on
 
-        self.ball_m = ball_m
+        # self.ball_m = ball_m
         self.pole_l = pole_l
 
         self.ang_s = ang_s0  # state of the dynamics
@@ -73,29 +73,34 @@ class Pendulum:
         # Setup dynamics T2 - LQR applicable
         self.planned: bool = planned
         if self.planned:
-            self.iterative = iterative
+            self.reeval = reeval
 
-            self.lqr_design_init: LqrDesignLti = setup_pendulum_lqr_lti(
-                n_steps=n_steps, iterative=self.iterative,
+            self.lqr_design: LqrDesignLti = setup_pendulum_lqr_lti(
+                n_steps=n_steps, reeval=self.reeval,
                 ang_s0=ang_s0, ang_v0=ang_v0,
                 dt=tau, rho=rho,
                 gravity=gravity, damping=damping
             )
-            self.lqr_design: LqrDesignLti = self.lqr_design_init
             self.trajectory: LqrTrajectory = solve_lqr_lti(self.lqr_design)
 
-            if self.iterative:
+            if self.reeval:
                 self.trajectory_list: List[LqrTrajectory] = []
 
         self.iter: int = 0
 
-    def update_dynamics(self):
-        assert self.iterative, "This is iterative LQR mode and is not activated"
+    def check_to_reevaluate(self):
+        angle_0: float = self.lqr_design.x_0[0, 0]
+        new_angle_0: float = self.trajectory.x_t_list[self.iter][0, 0]
+
+        return math.fabs(new_angle_0 - angle_0) >= math.pi * 1e-2
+
+    def reevaluate(self):
+        assert self.reeval, "This is reevaluating LQR mode and is not activated"
 
         new_ang_s0, new_ang_v0 = self.trajectory.x_t_list[self.iter][:, 0]
         self.lqr_design = setup_pendulum_lqr_lti(
             n_steps=self.lqr_design.n_steps - self.iter,
-            iterative=self.iterative,
+            reeval=self.reeval,
             ang_s0=new_ang_s0, ang_v0=new_ang_v0,
             dt=self.dt, rho=self.lqr_design.hyperparameters['rho'],
             gravity=self.gravity, damping=self.damping
@@ -143,10 +148,14 @@ class Pendulum:
             return False
 
     def get_trajectory(self) -> LqrTrajectory:
-        if self.iterative:
+        if self.reeval:
             # flatten and return
             x_t_list: List[ndarray] = [x_t for traj in self.trajectory_list for x_t in traj.x_t_list]
             u_t_list: List[ndarray] = [u_t for traj in self.trajectory_list for u_t in traj.u_t_list]
             return LqrTrajectory(x_t_list, u_t_list)
         else:
             return self.trajectory
+
+    def terminate(self):
+        if self.reeval:
+            self.reevaluate()
