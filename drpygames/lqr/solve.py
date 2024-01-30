@@ -11,40 +11,41 @@ from numpy.linalg import inv
 from plotly import graph_objects as go
 from plotly.subplots import make_subplots
 
+ndarrflt = ndarray[float]
 
-def transition(A: ndarray, x_t: ndarray, B: ndarray, u_t: ndarray) -> ndarray:
+def transition(A: ndarrflt, x_t: ndarrflt, B: ndarrflt, u_t: ndarrflt) -> ndarrflt:
     """Get the next state x_tpp from x_t and u_t with linear dynamics"""
     return A @ x_t + B @ u_t
 
 
-def innerproduct(state: ndarray, measure: ndarray) -> ndarray:
+def innerproduct(state: ndarrflt, measure: ndarrflt) -> ndarrflt:
     """Do <state|measure|state> matrix operation"""
     return state.T @ measure @ state
 
 
-def brek(B: ndarray, R: ndarray, S_tpp: ndarray) -> ndarray:
+def brek(B: ndarrflt, R: ndarrflt, S_tpp: ndarrflt) -> ndarrflt:
     """Do R + <B|S_tpp|B>"""
     return R + innerproduct(B, S_tpp)
 
 
-def inv_brek(B: ndarray, R: ndarray, S_tpp: ndarray) -> ndarray:
+def inv_brek(B: ndarrflt, R: ndarrflt, S_tpp: ndarrflt) -> ndarrflt:
     """Do (R + <B|S_tpp|B>)^-1"""
     return inv(brek(B, R, S_tpp))
 
 
-def kalmangain(A: ndarray, B: ndarray, R: ndarray, S_tpp: ndarray) -> ndarray:
+def kalmangain(A: ndarrflt, B: ndarrflt, R: ndarrflt, S_tpp: ndarrflt) -> ndarrflt:
     """Get Kalman Gain matrix at time t from t+1 Solution matrix and LQR parameters"""
     return -inv_brek(B, R, S_tpp) @ B.T @ S_tpp @ A
 
 
-def rewind_solution(A: ndarray, B: ndarray, Q: ndarray, R: ndarray, S_tpp: ndarray) -> ndarray:
+def rewind_solution(A: ndarrflt, B: ndarrflt, Q: ndarrflt, R: ndarrflt, S_tpp: ndarrflt) -> ndarrflt:
     """Get Solution matrix at time t from t+1 Solution matrix and LQR parameters"""
-    term2: ndarray = innerproduct(A, S_tpp)
+    term2: ndarrflt = innerproduct(A, S_tpp)
 
-    term3_1: ndarray = inv_brek(B, S_tpp, R)
-    term3_2: ndarray = innerproduct(B, term3_1)
-    term3_3: ndarray = innerproduct(S_tpp, term3_2)
-    term3: ndarray = innerproduct(A, term3_3)
+    term3_1: ndarrflt = inv_brek(B, S_tpp, R)
+    term3_2: ndarrflt = innerproduct(B, term3_1)
+    term3_3: ndarrflt = innerproduct(S_tpp, term3_2)
+    term3: ndarrflt = innerproduct(A, term3_3)
 
     return Q + term2 - term3
 
@@ -53,11 +54,11 @@ def rewind_solution(A: ndarray, B: ndarray, Q: ndarray, R: ndarray, S_tpp: ndarr
 class LqrDesign:
     task: str
 
-    x_0: ndarray[float]
+    x_0: ndarrflt
 
-    Q: ndarray[float]
-    R: ndarray[float]
-    S_T: ndarray[float]
+    Q: ndarrflt
+    R: ndarrflt
+    S_T: ndarrflt
     n_steps: int
 
     hyperparameters: Optional[Dict[str, Any]]
@@ -68,23 +69,18 @@ class LqrDesign:
 
 @dataclass
 class LqrDesignLti(LqrDesign):
-    A: ndarray[float]
-    B: ndarray[float]
-
-@dataclass
-class LqrDesignLtv(LqrDesign):
-    A_list: List[ndarray[float]]
-    B_list: List[ndarray[float]]
+    A: ndarrflt
+    B: ndarrflt
 
 
 @dataclass
 class LqrTrajectory:
-    x_t_list: List[ndarray[float]]
-    u_t_list: List[ndarray[float]]
+    x_t_list: List[ndarrflt]
+    u_t_list: List[ndarrflt]
 
     def copy_til_i(self, ind_i: int):
-        x_t_list: List[ndarray[float]] = [x_t for x_t in self.x_t_list[:ind_i+1]]
-        u_t_list: List[ndarray[float]] = [u_t for u_t in self.u_t_list[:ind_i+1]]
+        x_t_list: List[ndarrflt] = [x_t for x_t in self.x_t_list[:ind_i + 1]]
+        u_t_list: List[ndarrflt] = [u_t for u_t in self.u_t_list[:ind_i + 1]]
         return LqrTrajectory(x_t_list, u_t_list)
 
     def check_dimentionality(self):
@@ -108,35 +104,35 @@ def solve_lqr_lti(lqrdesign: LqrDesignLti) -> LqrTrajectory:
     • optimal u is a linear function of the state (called linear state feedback)
     • recursion for min cost-to-go runs backward in time
     """
-    x_0: ndarray = lqrdesign.x_0
-    A: ndarray = lqrdesign.A
-    B: ndarray = lqrdesign.B
+    x_0: ndarrflt = lqrdesign.x_0
+    A: ndarrflt = lqrdesign.A
+    B: ndarrflt = lqrdesign.B
 
-    Q: ndarray = lqrdesign.Q
-    R: ndarray = lqrdesign.R
-    S_T: ndarray = lqrdesign.S_T
+    Q: ndarrflt = lqrdesign.Q
+    R: ndarrflt = lqrdesign.R
+    S_T: ndarrflt = lqrdesign.S_T
     n_steps: int = lqrdesign.n_steps
 
     # Run
-    S_tpp_list: List[ndarray] = [S_T]
+    S_tpp_list: List[ndarrflt] = [S_T]
     for t in range(n_steps, 0, -1):
-        S_t: ndarray = rewind_solution(A, B, Q, R, S_tpp_list[-1])
+        S_t: ndarrflt = rewind_solution(A, B, Q, R, S_tpp_list[-1])
         S_tpp_list.append(S_t)
     S_tpp_list = S_tpp_list[::-1]
 
-    K_t_list: List[ndarray] = []
+    K_t_list: List[ndarrflt] = []
     for t in range(0, n_steps, 1):
-        K_t: ndarray = kalmangain(A, B, R, S_tpp_list[t + 1])
+        K_t: ndarrflt = kalmangain(A, B, R, S_tpp_list[t + 1])
         K_t_list.append(K_t)
 
-    x_t_list: List[ndarray] = [x_0]
-    u_t_list: List[ndarray] = []
+    x_t_list: List[ndarrflt] = [x_0]
+    u_t_list: List[ndarrflt] = []
     for t in range(0, n_steps, 1):
-        u_t: ndarray = K_t_list[t] @ x_t_list[t]
+        u_t: ndarrflt = K_t_list[t] @ x_t_list[t]
         u_t_list.append(u_t)
 
         if t < n_steps:
-            x_tpp: ndarray = transition(A, x_t_list[t], B, u_t)
+            x_tpp: ndarrflt = transition(A, x_t_list[t], B, u_t)
             x_t_list.append(x_tpp)
 
     plan_result: LqrTrajectory = LqrTrajectory(x_t_list=x_t_list, u_t_list=u_t_list)
@@ -145,12 +141,12 @@ def solve_lqr_lti(lqrdesign: LqrDesignLti) -> LqrTrajectory:
 
 def plot_lqr_trajectory(trajectory: LqrTrajectory, lqrdesign: LqrDesign):
     x_dim: int = trajectory.x_t_list[0].shape[0]
-    x_arr_dict: Dict[int, ndarray] = {}
+    x_arr_dict: Dict[int, ndarrflt] = {}
     for ind_x in range(x_dim):
         x_arr_dict[ind_x] = np.asarray([x_t[ind_x, 0] for x_t in trajectory.x_t_list])
 
     u_dim: int = trajectory.u_t_list[0].shape[0]
-    u_arr_dict: Dict[int, ndarray] = {}
+    u_arr_dict: Dict[int, ndarrflt] = {}
     for ind_u in range(u_dim):
         u_arr_dict[ind_u] = np.asarray([u_t[ind_u, 0] for u_t in trajectory.u_t_list])
 
@@ -174,18 +170,18 @@ def plot_lqr_trajectory(trajectory: LqrTrajectory, lqrdesign: LqrDesign):
 
 def setup_example1(rho: float = 0.3) -> LqrDesignLti:
     """Toy example of Defining dynamics and control objective parameters"""
-    x_0: ndarray = np.array([[1, 0]], dtype=float).T
+    x_0: ndarrflt = np.array([[1, 0]], dtype=float).T
     n_steps: int = 20
-    # x_T: ndarray = np.array([[0, 0]], dtype=float).T # final state is indirectly represented by S_T
+    # x_T: ndfloat = np.array([[0, 0]], dtype=float).T # final state is indirectly represented by S_T
 
-    A_Rair: ndarray = np.array([[1, 1], [0, 0.7]], dtype=float)
-    # A_R0: ndarray = np.array([[1, 1], [0, 1]], dtype=float)
-    A: ndarray = A_Rair  # A_R0
-    B: ndarray = np.array([[0, 0], [0, 1]], dtype=float)
+    A_Rair: ndarrflt = np.array([[1, 1], [0, 0.7]], dtype=float)
+    # A_R0: ndfloat = np.array([[1, 1], [0, 1]], dtype=float)
+    A: ndarrflt = A_Rair  # A_R0
+    B: ndarrflt = np.array([[0, 0], [0, 1]], dtype=float)
 
-    Q: ndarray = 1 * np.eye(2, 2, dtype=float)
-    R: ndarray = rho * np.eye(2, 2, dtype=float)
-    S_T: ndarray = 1 * np.eye(2, 2, dtype=float)
+    Q: ndarrflt = 1 * np.eye(2, 2, dtype=float)
+    R: ndarrflt = rho * np.eye(2, 2, dtype=float)
+    S_T: ndarrflt = 1 * np.eye(2, 2, dtype=float)
 
     return LqrDesignLti(
         task='Example1', x_0=x_0, A=A, B=B, Q=Q, R=R, S_T=S_T, n_steps=n_steps,

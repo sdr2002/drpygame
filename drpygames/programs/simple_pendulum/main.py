@@ -1,12 +1,12 @@
 import math
-from typing import Tuple, List
+from typing import Tuple, List, Any, Dict
 
 import pygame
 from pygame import Surface
 from pygame.time import Clock
 
 from drpygames.lqr.solve import plot_lqr_trajectory
-from drpygames.programs.simple_pendulum.pendulum import Pendulum
+from drpygames.programs.simple_pendulum.pendulum import Pendulum, RenderingMode
 from drpygames.programs.utils.rgb import BLACK, COLORS
 
 """ PYGAME animation implementation of simple pendulum
@@ -29,26 +29,31 @@ def run():
     height: float = 800
 
     dt: float = 0.1
-    fps: float = 10. * 1./dt
+    fps: float = 10. * 1. / dt
     assert dt < 0.5, "dt is foo coarse, set below 0.5"
 
     surface, clock = init_surface((width, height), 'Simple Pendulum')
 
     num_pendulum: int = 1
 
-    # control_mode = {'planned': False, 'ang_s0': math.pi * 0.3}
-    # control_mode = {'planned': True, 'reeval': False, 'ang_s0': math.pi*0.025, 'n_steps': 300, 'rho': 10.}
-    control_mode = {'planned': True, 'reeval': True, 'ang_s0': math.pi * 0.9, 'n_steps': 400, 'rho': 1e2}
+    control_mode1 = {'rendering_mode': RenderingMode.PHYSICAL, 'ang_s0': math.pi * 0.3, 'control': False}
+    control_mode2 = {'rendering_mode': RenderingMode.PLANNED, 'ang_s0': math.pi * 0.025,
+                     'control': True, 'ang_sf': 0., 'ang_vf': 0., 'n_steps': 300, 'rho': 10.}
+
+    control_mode: Dict[str, Any] = control_mode1
 
     pendulums: List[Pendulum] = [Pendulum(
-        planned=control_mode['planned'], reeval=control_mode.get('reeval', False),
+        rendering_mode=control_mode.get('rendering_mode', RenderingMode.PHYSICAL),
         ang_s0=control_mode['ang_s0'],
-        tau=dt, n_steps=control_mode.get('n_steps', None), rho=control_mode.get('rho', None),
+        dt=dt, max_iter=control_mode.get('n_steps', int(1e4)),
         damping=7e-3, gravity=0.09,
-        ball_m=100, pole_l=(200+100*i),
-        pivot_x=width//2, pivot_y=height//2, ball_color=c)
-        for i, c in enumerate(COLORS[:num_pendulum])
-    ]
+        ball_m=100, pole_l=(200 + 100 * i),
+        pivot_x=width // 2, pivot_y=height // 2, ball_color=c,
+        control=control_mode['control'],
+        n_steps=control_mode.get('n_steps', int(1e3)),
+        ang_sf=control_mode.get('ang_sf', None), ang_vf=control_mode.get('ang_vf', None),
+        rho=control_mode.get('rho', None)
+    ) for i, c in enumerate(COLORS[:num_pendulum])]
 
     stop: bool = False
     ind: int = 0
@@ -67,13 +72,6 @@ def run():
 
             pobj.step()
             pobj.draw(surface)
-
-            if pobj.planned and pobj.reeval:
-                # if (pobj.iter % 10 == 0) and (math.fabs(pobj.ang_s) >= math.pi * 0.02):
-                if pobj.check_to_reevaluate() and (math.fabs(pobj.ang_s) >= math.pi * 2e-2):
-                    print(f'LQR reset triggered at i={ind}')
-                    # For every 10N+1st iter while the angle is not small enough
-                    pobj.reevaluate()
 
         pygame.display.flip()
         ind += 1
