@@ -13,6 +13,7 @@ from plotly.subplots import make_subplots
 
 ndarrflt = ndarray[float]
 
+
 def transition(A: ndarrflt, x_t: ndarrflt, B: ndarrflt, u_t: ndarrflt) -> ndarrflt:
     """Get the next state x_tpp from x_t and u_t with linear dynamics"""
     return A @ x_t + B @ u_t
@@ -56,8 +57,6 @@ class LqrDesign:
 
     x_0: ndarrflt
 
-    Q: ndarrflt
-    R: ndarrflt
     S_T: ndarrflt
     n_steps: int
 
@@ -71,6 +70,16 @@ class LqrDesign:
 class LqrDesignLti(LqrDesign):
     A: ndarrflt
     B: ndarrflt
+    Q: ndarrflt
+    R: ndarrflt
+
+
+@dataclass
+class LqrDesignLtv(LqrDesign):
+    A_list: List[ndarrflt]
+    B_list: List[ndarrflt]
+    Q_list: List[ndarrflt]
+    R_list: List[ndarrflt]
 
 
 @dataclass
@@ -89,7 +98,7 @@ class LqrTrajectory:
         raise NotImplementedError
 
 
-def solve_lqr_lti(lqrdesign: LqrDesignLti) -> LqrTrajectory:
+def solve_lqr_lti(lqr_design: LqrDesignLti) -> LqrTrajectory:
     """Do this EXACTLY: this literally writes down what's described in Ch1.p23 
     
     This is for noob's meaning that if you are a beginner like me, you absolutely want to do in this way.
@@ -104,14 +113,14 @@ def solve_lqr_lti(lqrdesign: LqrDesignLti) -> LqrTrajectory:
     • optimal u is a linear function of the state (called linear state feedback)
     • recursion for min cost-to-go runs backward in time
     """
-    x_0: ndarrflt = lqrdesign.x_0
-    A: ndarrflt = lqrdesign.A
-    B: ndarrflt = lqrdesign.B
+    x_0: ndarrflt = lqr_design.x_0
+    A: ndarrflt = lqr_design.A
+    B: ndarrflt = lqr_design.B
 
-    Q: ndarrflt = lqrdesign.Q
-    R: ndarrflt = lqrdesign.R
-    S_T: ndarrflt = lqrdesign.S_T
-    n_steps: int = lqrdesign.n_steps
+    Q: ndarrflt = lqr_design.Q
+    R: ndarrflt = lqr_design.R
+    S_T: ndarrflt = lqr_design.S_T
+    n_steps: int = lqr_design.n_steps
 
     # Run
     S_tpp_list: List[ndarrflt] = [S_T]
@@ -134,6 +143,44 @@ def solve_lqr_lti(lqrdesign: LqrDesignLti) -> LqrTrajectory:
         if t < n_steps:
             x_tpp: ndarrflt = transition(A, x_t_list[t], B, u_t)
             x_t_list.append(x_tpp)
+
+    plan_result: LqrTrajectory = LqrTrajectory(x_t_list=x_t_list, u_t_list=u_t_list)
+    return plan_result
+
+
+def solve_lqr_ltv(lqr_design: LqrDesignLtv) -> LqrTrajectory:
+    """Time-varying linear dynamics solver by Kalman gain
+    """
+    x_0: ndarrflt = lqr_design.x_0
+    A_list: List[ndarrflt] = lqr_design.A_list
+    B_list: List[ndarrflt] = lqr_design.B_list
+
+    Q_list: List[ndarrflt] = lqr_design.Q_list
+    R_list: List[ndarrflt] = lqr_design.R_list
+    S_T: ndarrflt = lqr_design.S_T
+    n_steps: int = lqr_design.n_steps
+
+    # Run
+    S_tpp_list: List[ndarrflt] = [S_T]
+    for t in range(n_steps, 0, -1):
+        S_t: ndarrflt = rewind_solution(A_list[t], B_list[t], Q_list[t], R_list[t], S_tpp_list[-1])
+        S_tpp_list.append(S_t)
+    S_tpp_list = S_tpp_list[::-1]
+
+    K_t_list: List[ndarrflt] = []
+    for t in range(0, n_steps, 1):
+        K_t: ndarrflt = kalmangain(A_list[t], B_list[t], R_list[t], S_tpp_list[t + 1])
+        K_t_list.append(K_t)
+
+    x_t_list: List[ndarrflt] = [x_0]
+    u_t_list: List[ndarrflt] = []
+    for t in range(0, n_steps, 1):
+        u_t: ndarrflt = K_t_list[t] @ x_t_list[t]
+        u_t_list.append(u_t)
+
+        # if t < n_steps:
+        x_tpp: ndarrflt = transition(A_list[t], x_t_list[t], B_list[t], u_t)
+        x_t_list.append(x_tpp)
 
     plan_result: LqrTrajectory = LqrTrajectory(x_t_list=x_t_list, u_t_list=u_t_list)
     return plan_result
@@ -189,7 +236,81 @@ def setup_example1(rho: float = 0.3) -> LqrDesignLti:
     )
 
 
+def setup_example2_1(risk_aversion: float = 1e-7) -> LqrDesignLti:
+    """
+    state: [inventory, price]
+    control: [slice, None]
+    """
+    assert risk_aversion >= 0., "risk_aversion must be non-negative."
+    # but you can run and see what happens there ;)
+
+    x_0: ndarray[float] = np.array([[1e5, 0.]]).T
+    n_steps: int = 100
+
+    A: ndarray[float] = np.array([
+        [1., 0.],
+        [0., 1.]
+    ], dtype=float)
+    B: ndarray[float] = np.array([
+        [-1., 0.],
+        [2.5 * 1e-7, 0.]
+    ], dtype=float)
+
+    ignore: float = 1e-12
+    Q: ndarray[float] = risk_aversion * np.diag([1., ignore])
+    R: ndarray[float] = np.diag([2.5 * 1e-6, ignore])
+    S_T: ndarray[float] = np.diag([np.max([risk_aversion, 1e-7]) * 1e2, ignore])
+
+    return LqrDesignLti(
+        task='Example2_lti', x_0=x_0, A=A, B=B,
+        Q=Q, R=R, S_T=S_T, n_steps=n_steps,
+        hyperparameters={'risk_aversion': risk_aversion}
+    )
+
+
+def setup_example2_2(risk_aversion: float = 1e-7) -> LqrDesignLtv:
+    """
+    state: [inventory, price]
+    control: [slice, n/a]
+    """
+    assert risk_aversion >= 0., "risk_aversion must be non-negative."
+
+    x_0: ndarray[float] = np.array([[1e5, 0.]]).T
+    n_steps: int = 100
+
+    A: ndarray[float] = np.array([
+        [1., 0.],
+        [0., 1.]
+    ], dtype=float)
+    A_list: List[ndarray[float]] = [A for _ in range(n_steps + 1)]
+    v_profile = np.linspace(-1, 1, n_steps + 1) ** 2. + 0.5
+    v_profile /= np.mean(v_profile)
+    B_list: List[ndarray[float]] = [np.array([
+        [-1., 0.],
+        [(2.5 * 1e-7) * v_profile[t], 0.]
+    ], dtype=float) for t in range(n_steps + 1)]
+
+    ignore: float = 1e-12
+    Q: ndarray[float] = risk_aversion * np.diag([1., ignore])
+    Q_list: List[ndarray[float]] = [Q for _ in range(n_steps + 1)]
+    R_list: List[ndarray[float]] = [np.diag([(2.5 * 1e-6) * v_profile[t], ignore]) for t in range(n_steps + 1)]
+    S_T: ndarray[float] = np.diag([np.max([risk_aversion, 1e-7]) * 1e2, ignore])
+
+    return LqrDesignLtv(
+        task='Example2_ltv', x_0=x_0, A_list=A_list, B_list=B_list,
+        Q_list=Q_list, R_list=R_list, S_T=S_T, n_steps=n_steps,
+        hyperparameters={'risk_aversion': risk_aversion}
+    )
+
+
 if __name__ == "__main__":
-    lqrdesign: LqrDesignLti = setup_example1(rho=10.)
-    trajectory: LqrTrajectory = solve_lqr_lti(lqrdesign)
-    plot_lqr_trajectory(trajectory, lqrdesign)
+    # lqr_design: LqrDesignLti = setup_example1(rho=10.)
+    lqr_design: LqrDesignLti = setup_example2_1(risk_aversion=1e-8)
+    trajectory: LqrTrajectory = solve_lqr_lti(lqr_design)
+
+    plot_lqr_trajectory(trajectory, lqr_design)
+
+    # lqr_design: LqrDesignLtv = setup_example2_2(risk_aversion=1e-8)
+    # trajectory: LqrTrajectory = solve_lqr_ltv(lqr_design)
+    #
+    # plot_lqr_trajectory(trajectory, lqr_design)
